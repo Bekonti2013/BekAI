@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>TeachBek</title>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+<style>
+/* ===== твои стили без изменений ===== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0F1117; color: #D4D8E8; font-family: Georgia, serif; height: 100vh; display: flex; flex-direction: column; }
+
+#header { background: #1A1D2E; padding: 16px 24px; display: flex; align-items: center; gap: 14px; border-bottom: 1px solid #252840; }
+#header .avatar { font-size: 32px; }
+#header h1 { font-size: 20px; color: #E8D5A3; }
+#header p { font-size: 12px; color: #7A8099; margin-top: 2px; }
+
+#chat { flex: 1; overflow-y: auto; padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; }
+
+.msg { display: flex; flex-direction: column; gap: 4px; max-width: 80%; }
+.msg.professor { align-self: flex-start; }
+.msg.user { align-self: flex-end; }
+
+.msg-label { font-size: 12px; color: #7A8099; }
+.msg.user .msg-label { text-align: right; color: #4ECDC4; }
+
+.msg-bubble { padding: 12px 16px; border-radius: 12px; font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
+.msg.professor .msg-bubble { background: #1A1D2E; border: 1px solid #252840; color: #D4D8E8; border-radius: 4px 12px 12px 12px; }
+.msg.user .msg-bubble { background: #252840; color: #B8E0DC; border-radius: 12px 4px 12px 12px; }
+
+#bottom { background: #1A1D2E; padding: 16px 24px; border-top: 1px solid #252840; display: flex; gap: 10px; align-items: flex-end; }
+
+#input { flex: 1; background: #252840; border: 1px solid #3A3D52; color: #E8EAF6; padding: 10px 14px; border-radius: 8px; font-size: 14px; font-family: Georgia, serif; resize: none; }
+
+#sendbtn { background: #4ECDC4; color: #0F1117; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: bold; }
+</style>
+</head>
+
+<body>
+
+<div id="header">
+  <div class="avatar">🎓</div>
+  <div>
+    <h1>TeachBek</h1>
+    <p>Your Personal AI English Teacher</p>
+  </div>
+</div>
+
+<div id="chat"></div>
+
+<div id="bottom">
+  <textarea id="input" placeholder="Write..." rows="1"></textarea>
+  <button id="sendbtn" onclick="sendMessage()">Send</button>
+</div>
+
+<script>
+// ===== FIREBASE =====
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_DOMAIN",
+  projectId: "YOUR_PROJECT_ID"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+// ===== GROQ AI =====
+const API_KEY = "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";
+let history = [];
+
+function addMessage(role, text) {
+  const chat = document.getElementById("chat");
+  const div = document.createElement("div");
+  div.className = "msg " + role;
+
+  div.innerHTML = `
+    <div class="msg-label">${role === "user" ? "You" : "TeachBek"}</div>
+    <div class="msg-bubble">${text}</div>
+  `;
+
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+// ===== SEND MESSAGE =====
+async function sendMessage() {
+  const input = document.getElementById("input");
+  const text = input.value.trim();
+  if (!text) return;
+
+  input.value = "";
+
+  addMessage("user", text);
+
+  // save to firebase
+  db.collection("chats").add({
+    role: "user",
+    text: text,
+    time: Date.now()
+  });
+
+  const messages = [{ role: "system", content: "You are an English teacher." }, ...history];
+
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + API_KEY
+    },
+    body: JSON.stringify({
+      model: "llama-3.3-70b-versatile",
+      messages
+    })
+  });
+
+  const data = await res.json();
+  const reply = data.choices[0].message.content;
+
+  addMessage("professor", reply);
+
+  db.collection("chats").add({
+    role: "assistant",
+    text: reply,
+    time: Date.now()
+  });
+}
+
+// ===== LOAD HISTORY =====
+db.collection("chats")
+.orderBy("time")
+.onSnapshot(snapshot => {
+  document.getElementById("chat").innerHTML = "";
+
+  snapshot.forEach(doc => {
+    const msg = doc.data();
+    addMessage(msg.role === "user" ? "user" : "professor", msg.text);
+  });
+});
+</script>
+
+</body>
+</html>
